@@ -17,7 +17,7 @@ flowchart TD
 
 | Status | Phase | Core Deliverable | Success Criteria |
 | :---: | --- | --- | --- |
-| ⬜ | Data Engine | `data/generate_data.py` | 100,000 session-subscriber pairs at ~3% conversion; payout varies within subscriber by user intent; payout-probability correlation between -0.3 and 0; generator seed and config logged as an MLflow run |
+| 🟨 | Data Engine | `data/generate_data.py` | 100,000 session-subscriber pairs at ~3% conversion; payout varies within subscriber by user intent; payout-probability correlation between -0.3 and 0; generator seed and config logged as an MLflow run |
 | ⬜ | Retrieval Layer | `src/retrieval.py` | Eligibility filter (geo, vertical, active contract, remaining budget) returning a fixed candidate set size; median candidates per request logged |
 | ⬜ | ML Engine | `src/train.py` | LightGBM with session-aware split; PR-AUC beats stratified-random baseline by a stated margin; no temporal leakage verified by shuffled-split control; run tracked in MLflow with params, metrics, feature importance, and signature-typed model via `mlflow.lightgbm` |
 | ⬜ | Calibration Gate | `src/calibrate.py` | ECE < 0.02 and reliability curve logged as an MLflow artifact; calibrated model wrapped as `mlflow.pyfunc` so `predict` returns calibrated probabilities |
