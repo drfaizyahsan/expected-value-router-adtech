@@ -17,7 +17,7 @@ flowchart TD
 
 | Status | Phase | Core Deliverable | Success Criteria |
 | :---: | -- | --- | --- |
-| 🟨 | Project Setup | pyproject.toml | license declared, pdm env setup, toml setup |
+| ✅ | Project Setup | pyproject.toml | license declared, pdm env setup, toml setup |
 | 🟨 | CI-CD setup | CI-CD | linting, testing, protecting main, merge criteria, github ci-cd |
 | 🟨 | Data Engine | `data/generate_data.py` | 100,000 session-subscriber pairs at ~3% conversion; payout varies within subscriber by user intent; payout-probability correlation between -0.3 and 0; generator seed and config logged as an MLflow run |
 | ⬜ | Retrieval Layer | `src/retrieval.py` | Eligibility filter (geo, vertical, active contract, remaining budget) returning a fixed candidate set size; median candidates per request logged |
