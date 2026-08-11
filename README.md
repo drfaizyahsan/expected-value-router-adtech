@@ -5,10 +5,10 @@ Routes traffic to advertisers while optimizing the expected value.
 ### High Level Flow
 ```mermaid
 flowchart LR
-    A[Candidate Generation i.e. prob of advertiser for a given user] --> B[Prob of conversion given user and advertiser]
-    B --> C[EV = Prob(conversion) &times; book_value &times; commission_rate]
-    C --> D[rank advertisers for each user based on EV]
-    D --> E[match user with advertiser based on exploration v/s exploitation]
+    A["Candidate Generation<br/>(prob of advertiser for a given user)"] --> B[Prob of conversion<br/>given user and advertiser]
+    B --> C["EV = Prob(conversion)<br/>× book_value<br/>× commission_rate"]
+    C --> D[Rank advertisers for each user<br/>based on EV]
+    D --> E[Match user with advertiser<br/>based on exploration vs exploitation]
 ```
 
 ### TODO
