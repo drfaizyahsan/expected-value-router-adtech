@@ -1,0 +1,15 @@
+[project]
+name = "expected-value-router-adtech"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "drfaizyahsan",email = "dr.faizy.ahsan@gmail.com"},
+]
+dependencies = ["ruff==0.16.2", "mlflow==3.15.1", "pydantic==2.13", "fastapi==0.141.1"]
+requires-python = "==3.14.*"
+readme = "README.md"
+license = {text = "GPL-3.0-only"}
+
+
+[tool.pdm]
+distribution = false
