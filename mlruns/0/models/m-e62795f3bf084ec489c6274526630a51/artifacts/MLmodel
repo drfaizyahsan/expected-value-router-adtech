@@ -1,0 +1,40 @@
+artifact_path: /Users/kashifrizvee/Desktop/job hunt/projects/expected-value-router-adtech/mlruns/0/models/m-e62795f3bf084ec489c6274526630a51/artifacts
+flavors:
+  lightgbm:
+    code: null
+    data: model.skops
+    lgb_version: 4.7.0
+    model_class: lightgbm.sklearn.LGBMClassifier
+    serialization_format: skops
+    skops_trusted_types:
+    - lightgbm.sklearn.LGBMClassifier
+    - lightgbm.sklearn.LGBMRegressor
+    - lightgbm.basic.Booster
+    - collections.OrderedDict
+  python_function:
+    data: model.skops
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.lightgbm
+    python_version: 3.14.6
+is_signature_from_type_hint: false
+mlflow_version: 3.15.1
+model_id: m-e62795f3bf084ec489c6274526630a51
+model_size_bytes: 67056
+model_uuid: m-e62795f3bf084ec489c6274526630a51
+prompts: null
+run_id: 7f6f19debdb6490ba3274d9e8fbd4986
+signature:
+  inputs: '[{"type": "string", "name": "user_device", "required": true}, {"type":
+    "string", "name": "user_osName", "required": true}, {"type": "string", "name":
+    "user_browserName_clean", "required": true}, {"type": "long", "name": "subscriber_tier",
+    "required": true}, {"type": "double", "name": "travel_distance_km", "required":
+    true}, {"type": "integer", "name": "is_long_haul", "required": true}, {"type":
+    "double", "name": "adr_clean", "required": true}, {"type": "double", "name": "cross_sell_score",
+    "required": true}, {"type": "integer", "name": "mobile_ux_friction", "required":
+    true}, {"type": "double", "name": "expected_gross_commission", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "int32", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-08-14 02:38:05.228323'

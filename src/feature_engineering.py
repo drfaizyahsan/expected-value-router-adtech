@@ -1,4 +1,3 @@
-import logging
 import math
 import os
 
@@ -6,11 +5,9 @@ import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DoubleType
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+from src.utils import get_logger
+
+logger = get_logger()
 
 
 def parse_coordinate(col_name: str, index: int):
@@ -109,6 +106,18 @@ def engineer_features_spark(df):
         )
         .drop("raw_distance_km")
     )
+
+    # Generate binary conversion target from synthetic ground truth probability
+    if (
+        "p_conversion_ground_truth" in df_final.columns
+        and "is_conversion" not in df_final.columns
+    ):
+        df_final = df_final.withColumn(
+            "is_conversion",
+            F.when(F.rand(seed=42) < F.col("p_conversion_ground_truth"), 1).otherwise(
+                0
+            ),
+        )
 
     return df_final
 
