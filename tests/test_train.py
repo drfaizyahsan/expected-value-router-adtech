@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from src.train import (
+    CAT_COLS,
     FEATURE_COLS,
     TARGET_COL,
     load_data,
@@ -27,6 +28,9 @@ def sample_featured_df():
         "user_browserName_clean": np.random.choice(
             ["chrome", "safari", "firefox"], n_samples
         ),
+        "subscriber_tier": np.random.choice(
+            ["bronze", "silver", "gold", "platinum"], n_samples
+        ),  # Added column
         "travel_distance_km": np.random.uniform(50.0, 3000.0, n_samples),
         "is_long_haul": np.random.choice([0, 1], n_samples),
         "adr_clean": np.random.uniform(50.0, 500.0, n_samples),
@@ -53,14 +57,14 @@ def test_load_data_categorical_conversion(tmp_path, sample_featured_df):
 
     df_loaded = load_data(str(parquet_path))
 
-    for cat_col in ["user_device", "user_osName", "user_browserName_clean"]:
+    for cat_col in CAT_COLS:
         assert df_loaded[cat_col].dtype.name == "category"
 
 
 def test_train_conversion_model_execution(sample_featured_df):
     """Verifies that LightGBM trains successfully and produces valid evaluation metrics."""
-    # Ensure categorical columns are properly typed
-    for col in ["user_device", "user_osName", "user_browserName_clean"]:
+    # Cast categorical columns dynamically using CAT_COLS
+    for col in CAT_COLS:
         sample_featured_df[col] = sample_featured_df[col].astype("category")
 
     params = {
@@ -73,7 +77,7 @@ def test_train_conversion_model_execution(sample_featured_df):
 
     model, metrics = train_conversion_model(sample_featured_df, params=params)
 
-    # Check metrics structure and boundary bounds
+    # Check metrics structure and bounds
     assert "val_roc_auc" in metrics
     assert "val_log_loss" in metrics
     assert 0.0 <= metrics["val_roc_auc"] <= 1.0
@@ -89,7 +93,7 @@ def test_train_conversion_model_execution(sample_featured_df):
 
 def test_model_artifact_persistence(tmp_path, sample_featured_df):
     """Verifies that the trained LightGBM model can be serialized and reloaded via joblib."""
-    for col in ["user_device", "user_osName", "user_browserName_clean"]:
+    for col in CAT_COLS:
         sample_featured_df[col] = sample_featured_df[col].astype("category")
 
     model, _ = train_conversion_model(

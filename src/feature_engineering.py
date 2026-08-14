@@ -5,7 +5,7 @@ import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
 from pyspark.sql.types import DoubleType
 
-from utils import get_logger
+from src.utils import get_logger
 
 logger = get_logger()
 

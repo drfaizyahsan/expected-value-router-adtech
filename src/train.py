@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
 from sklearn.model_selection import train_test_split
 
-from utils import get_logger
+from src.utils import get_logger
 
 logger = get_logger()
 
