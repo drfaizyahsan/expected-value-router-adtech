@@ -5,7 +5,7 @@ import lightgbm as lgb
 import mlflow
 import mlflow.lightgbm
 import pandas as pd
-from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from utils import get_logger
@@ -64,14 +64,15 @@ def train_conversion_model(
 
     if params is None:
         params = {
-            "objective": "binary",
-            "metric": "binary_logloss",
-            "boosting_type": "gbdt",
-            "learning_rate": 0.05,
-            "num_leaves": 31,
-            "n_estimators": 150,
+            # "objective": "binary",
+            # "metric": "binary_logloss",
+            # "boosting_type": "gbdt",
+            # "learning_rate": 0.05,
+            # "num_leaves": 31,
+            "n_estimators": 200,
             "random_state": random_state,
             "verbose": -1,
+            "class_weight": "balanced",
         }
 
     model = lgb.LGBMClassifier(**params)
@@ -92,9 +93,14 @@ def train_conversion_model(
         val_preds_prob = model.predict_proba(X_val)[:, 1]
 
         auc_score = float(roc_auc_score(y_val, val_preds_prob))
+        aupr_score = float(average_precision_score(y_val, val_preds_prob))
         loss_val = float(log_loss(y_val, val_preds_prob))
 
-        metrics = {"val_roc_auc": auc_score, "val_log_loss": loss_val}
+        metrics = {
+            "val_aupr": aupr_score,
+            "val_roc_auc": auc_score,
+            "val_log_loss": loss_val,
+        }
         mlflow.log_metrics(metrics)
 
     return model, metrics
