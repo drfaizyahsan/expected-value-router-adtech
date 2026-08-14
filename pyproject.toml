@@ -5,10 +5,14 @@ description = "Default template for PDM package"
 authors = [
     {name = "drfaizyahsan",email = "dr.faizy.ahsan@gmail.com"},
 ]
-dependencies = ["ruff==0.16.2", "mlflow==3.15.1", "pydantic==2.13", "fastapi==0.141.1"]
+dependencies = ["ruff==0.16.2", "mlflow==3.15.1", "pydantic==2.13", "fastapi==0.141.1", "pyspark>=4.2.0", "pytest>=9.1.1"]
 requires-python = "==3.14.*"
 readme = "README.md"
 license = {text = "GPL-3.0-only"}
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
 
 
 [tool.pdm]

@@ -32,6 +32,6 @@ jobs:
       run: |
         # linting check
         ruff check       
-    # - name: Test with pytest
-    #   run: |
-    #     pytest
+    - name: Test with pytest
+      run: |
+        pytest
