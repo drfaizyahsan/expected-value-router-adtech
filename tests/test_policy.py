@@ -1,4 +1,3 @@
-import pytest
 from src.policy import (
     RoutingCandidate,
     calculate_expected_value,

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+
 import numpy as np
 
 
@@ -21,9 +22,9 @@ class RoutingDecision:
 
 
 def calculate_expected_value(
-        p_conversion: float,
-        commission_rate: float,
-        booking_rate: float,
+    p_conversion: float,
+    commission_rate: float,
+    booking_rate: float,
 ) -> float:
     """Calculates Expected Value (EV) for an ad routing pair.
 
@@ -35,9 +36,9 @@ def calculate_expected_value(
 
 
 def rank_and_route_candidates(
-        candidates: list[RoutingCandidate],
-        min_ev_threshold: float = 0.05,
-        fallback_subscriber_id: str = "SUB_FALLBACK_DEFAULT",
+    candidates: list[RoutingCandidate],
+    min_ev_threshold: float = 0.05,
+    fallback_subscriber_id: str = "SUB_FALLBACK_DEFAULT",
 ) -> RoutingDecision:
     """Ranks candidate subscribers by Expected Value and selects the optimal target."""
 
@@ -59,14 +60,16 @@ def rank_and_route_candidates(
             booking_rate=c.booking_rate,
         )
 
-        evaluated_candidates.append({
-            "subscriber_id": c.subscriber_id,
-            "subscriber_name": c.subscriber_name,
-            "commission_rate": c.commission_rate,
-            "booking_rate": c.booking_rate,
-            "p_conversion": c.p_conversion,
-            "expected_value": ev,
-        })
+        evaluated_candidates.append(
+            {
+                "subscriber_id": c.subscriber_id,
+                "subscriber_name": c.subscriber_name,
+                "commission_rate": c.commission_rate,
+                "booking_rate": c.booking_rate,
+                "p_conversion": c.p_conversion,
+                "expected_value": ev,
+            }
+        )
 
     # Sort descending by Expected Value
     evaluated_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
