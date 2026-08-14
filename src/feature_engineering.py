@@ -1,8 +1,10 @@
-import os
-from pyspark.sql import SparkSession
-import pyspark.sql.functions as F
-from pyspark.sql.types import DoubleType
 import logging
+import math
+import os
+
+import pyspark.sql.functions as F
+from pyspark.sql import SparkSession
+from pyspark.sql.types import DoubleType
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,9 +36,8 @@ def compute_haversine_distance(lat1_col, lon1_col, lat2_col, lon2_col):
     delta_phi = F.radians(lat2_col - lat1_col)
     delta_lambda = F.radians(lon2_col - lon1_col)
 
-    a = (
-            F.pow(F.sin(delta_phi / 2.0), 2)
-            + F.cos(phi1) * F.cos(phi2) * F.pow(F.sin(delta_lambda / 2.0), 2)
+    a = F.pow(F.sin(delta_phi / 2.0), 2) + F.cos(phi1) * F.cos(phi2) * F.pow(
+        F.sin(delta_lambda / 2.0), 2
     )
     c = 2.0 * F.atan2(F.sqrt(a), F.sqrt(1.0 - a))
     return r * c
@@ -56,15 +57,13 @@ def engineer_features_spark(df):
         .otherwise("unknown")
     )
 
-    df_cleaned = (
-        df.withColumn("user_browserName_clean", clean_browser_expr)
-        .fillna({"booked_rental": 0.0, "booked_flight": 0.0})
+    df_cleaned = df.withColumn("user_browserName_clean", clean_browser_expr).fillna(
+        {"booked_rental": 0.0, "booked_flight": 0.0}
     )
 
     # 2. Extract Spatial Coordinates
     df_coords = (
-        df_cleaned
-        .withColumn("user_lat", parse_coordinate("user_lat_lng", 1))
+        df_cleaned.withColumn("user_lat", parse_coordinate("user_lat_lng", 1))
         .withColumn("user_lng", parse_coordinate("user_lat_lng", 2))
         .withColumn("dest_lat", parse_coordinate("dest_lat_lng", 1))
         .withColumn("dest_lng", parse_coordinate("dest_lat_lng", 2))
@@ -75,46 +74,38 @@ def engineer_features_spark(df):
         "raw_distance_km",
         compute_haversine_distance(
             F.col("user_lat"), F.col("user_lng"), F.col("dest_lat"), F.col("dest_lng")
-        )
+        ),
     )
 
     # Approximate median over distributed partition
     median_dist = df_dist.stat.approxQuantile("raw_distance_km", [0.5], 0.01)[0]
-    if median_dist is None or median_dist != median_dist:
+    if median_dist is None or median_dist != math.isnan():
         median_dist = 500.0
 
-    df_features = (
-        df_dist
-        .withColumn(
-            "travel_distance_km",
-            F.coalesce(F.col("raw_distance_km"), F.lit(float(median_dist)))
-        )
-        .withColumn(
-            "is_long_haul",
-            F.when(F.col("travel_distance_km") > 1000.0, 1).otherwise(0)
-        )
+    df_features = df_dist.withColumn(
+        "travel_distance_km",
+        F.coalesce(F.col("raw_distance_km"), F.lit(float(median_dist))),
+    ).withColumn(
+        "is_long_haul", F.when(F.col("travel_distance_km") > 1000.0, 1).otherwise(0)
     )
 
     # 4. Outlier Clipping & Domain Interaction Features
     df_final = (
-        df_features
-        .withColumn(
+        df_features.withColumn(
             "adr_clean",
-            F.when(F.col("avg_daily_rate") < 10.0, 10.0).otherwise(F.col("avg_daily_rate"))
+            F.when(F.col("avg_daily_rate") < 10.0, 10.0).otherwise(
+                F.col("avg_daily_rate")
+            ),
         )
-        .withColumn(
-            "cross_sell_score",
-            F.col("booked_flight") + F.col("booked_rental")
-        )
+        .withColumn("cross_sell_score", F.col("booked_flight") + F.col("booked_rental"))
         .withColumn(
             "mobile_ux_friction",
             F.when(
                 (F.col("user_device") == "mobile") & (F.col("mobile_optimized") == 0), 1
-            ).otherwise(0)
+            ).otherwise(0),
         )
         .withColumn(
-            "expected_gross_commission",
-            F.col("adr_clean") * F.col("commission_rate")
+            "expected_gross_commission", F.col("adr_clean") * F.col("commission_rate")
         )
         .drop("raw_distance_km")
     )
@@ -127,13 +118,14 @@ def main():
     output_path = "data/processed/featured_pairs.parquet"
 
     spark = (
-        SparkSession.builder
-        .appName("ExpectedValueRouter-FeatureEngineering")
+        SparkSession.builder.appName("ExpectedValueRouter-FeatureEngineering")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
         .getOrCreate()
     )
 
-    df_raw = spark.read.option("header", "true").option("inferSchema", "true").csv(raw_path)
+    df_raw = (
+        spark.read.option("header", "true").option("inferSchema", "true").csv(raw_path)
+    )
     logger.info(f"df_raw shape: {df_raw.count()} {len(df_raw.columns)}")
 
     df_featured = engineer_features_spark(df_raw)

@@ -44,11 +44,44 @@ def sample_raw_df(spark):
 
     data = [
         # Row 0: Valid baseline (Montreal -> Toronto)
-        ("desktop", "macOS", "Safari", "45.5017,-73.5673", "43.6532,-79.3832", 1.0, 0.0, 150.0, 0.12, 1),
+        (
+            "desktop",
+            "macOS",
+            "Safari",
+            "45.5017,-73.5673",
+            "43.6532,-79.3832",
+            1.0,
+            0.0,
+            150.0,
+            0.12,
+            1,
+        ),
         # Row 1: Dirty browser, missing rental signal, negative ADR anomaly, mobile UX friction
-        ("mobile", "Android", " CHROME_v118 ", "34.0522,-118.2437", "36.1699,-115.1398", 0.0, None, -99.0, 0.10, 0),
+        (
+            "mobile",
+            "Android",
+            " CHROME_v118 ",
+            "34.0522,-118.2437",
+            "36.1699,-115.1398",
+            0.0,
+            None,
+            -99.0,
+            0.10,
+            0,
+        ),
         # Row 2: Malformed coords, missing browser (NaN)
-        ("tablet", "iOS", None, "INVALID_COORD", "999.0,800.0", None, 1.0, 250.0, 0.15, 1),
+        (
+            "tablet",
+            "iOS",
+            None,
+            "INVALID_COORD",
+            "999.0,800.0",
+            None,
+            1.0,
+            250.0,
+            0.15,
+            1,
+        ),
     ]
 
     return spark.createDataFrame(data, schema)
@@ -57,7 +90,9 @@ def sample_raw_df(spark):
 def test_browser_cleaning_and_null_imputation(spark, sample_raw_df):
     """Tests browser string normalization and binary signal null imputation."""
     df_result = engineer_features_spark(sample_raw_df)
-    results = df_result.select("user_browserName_clean", "booked_rental", "booked_flight").collect()
+    results = df_result.select(
+        "user_browserName_clean", "booked_rental", "booked_flight"
+    ).collect()
 
     # Row 0: Standard browser
     assert results[0]["user_browserName_clean"] == "safari"
@@ -75,7 +110,9 @@ def test_browser_cleaning_and_null_imputation(spark, sample_raw_df):
 def test_coordinate_parsing_and_distance(spark, sample_raw_df):
     """Tests spatial regex extraction, Haversine computation, and invalid coordinate fallback."""
     df_result = engineer_features_spark(sample_raw_df)
-    results = df_result.select("travel_distance_km", "is_long_haul", "user_lat", "user_lng").collect()
+    results = df_result.select(
+        "travel_distance_km", "is_long_haul", "user_lat", "user_lng"
+    ).collect()
 
     # Row 0: Valid distance Montreal -> Toronto (~500 km)
     assert 450.0 < results[0]["travel_distance_km"] < 550.0
