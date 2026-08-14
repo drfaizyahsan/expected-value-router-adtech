@@ -79,7 +79,7 @@ def engineer_features_spark(df):
 
     # Approximate median over distributed partition
     median_dist = df_dist.stat.approxQuantile("raw_distance_km", [0.5], 0.01)[0]
-    if median_dist is None or median_dist != math.isnan():
+    if median_dist is None or math.isnan(median_dist):
         median_dist = 500.0
 
     df_features = df_dist.withColumn(
