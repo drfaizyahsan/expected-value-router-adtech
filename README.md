@@ -25,7 +25,7 @@ flowchart TD
 | ✅ | ML Engine | `src/train.py` | LightGBM with session-aware split; PR-AUC beats stratified-random baseline by a stated margin; no temporal leakage verified by shuffled-split control; run tracked in MLflow with params, metrics, feature importance, and signature-typed model via `mlflow.lightgbm` |
 | ⬜ | Calibration Gate | `src/calibrate.py` | ECE < 0.02 and reliability curve logged as an MLflow artifact; calibrated model wrapped as `mlflow.pyfunc` so `predict` returns calibrated probabilities |
 | ⬜ | Model Registry | MLflow Model Registry entry | Model registered as `ev-router-conversion` with a `champion` alias; API loads by alias, never by file path; promotion gated on ECE and PR-AUC thresholds |
-| ⬜ | Policy Engine | `src/policy.py` | EV ranking reorders top-1 vs probability ranking on >15% of requests; epsilon-greedy emits and logs propensity on every decision |
+| 🟨 | Policy Engine | `src/policy.py` | EV ranking reorders top-1 vs probability ranking on >15% of requests; epsilon-greedy emits and logs propensity on every decision |
 | ⬜ | Allocation Engine | `src/allocate.py` | Daily caps respected on 100% of requests; pacing prevents early-hour exhaustion of top subscribers; revenue vs capacity curve committed |
 | ⬜ | Evaluation Engine | `src/evaluate_policy.py` | SNIPS and DR revenue lift vs logged baseline with bootstrap 95% CI excluding zero; weight distribution and clipping threshold reported; each policy variant tracked as its own MLflow run |
 | ⬜ | API Contract | `app/schemas.py` | Pydantic v2 request/response models with field constraints and examples; malformed payload returns 422 with field-level detail |
