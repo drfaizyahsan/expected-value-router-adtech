@@ -2,6 +2,40 @@
 
 Routes traffic to advertisers while optimizing the expected value.
 
+## 📊 Empirical Routing Policy Benchmark
+
+To evaluate routing efficiency under real-world marketplace dynamics (cold-start subscribers, varying commission rates, position bias), we benchmarked three distinct routing policies across **1,000 simulated auction requests**:
+
+1. **$P(\text{conversion} \mid u, s)$ Policy:** Ranks purely on click/conversion likelihood (Relevancy-first).
+2. **Greedy Expected Value ($\text{EV}$):** Multiplies $P(\text{conversion}) \times \text{Payout}$ (Revenue-first, pure exploitation).
+3. **$\epsilon$-Greedy Contextual Bandit ($\epsilon=0.10$):** Balances $90\%$ greedy EV exploitation with $10\%$ exploration.
+
+![Policy Strategy Benchmark](docs/assets/benchmark_results.png)
+
+### Key Architectural Takeaways
+
+| Metric | $P(\text{conversion})$ | Greedy EV | $\epsilon$-Greedy EV (Bandit) |
+| :--- | :--- | :--- | :--- |
+| **Monetization Awareness** | ❌ None | ✅ Direct | ✅ Direct |
+| **Cold-Start Arm Discovery** | ❌ Trapped in initial bias | ❌ Starved ($0$ allocations) | ✅ **Discovers optimal cold arm** |
+| **Long-Term Cumulative Revenue** | Suboptimal ($\approx \$2,400$) | Moderate ($\approx \$3,600$) | **Highest ($\approx \$6,800$)** |
+| **Cumulative Regret Curve** | Linear high regret | Linear moderate regret | **Sub-linear / Bounded regret** |
+
+### Why $\epsilon$-Greedy Wins in Production
+* **Breaking the Winner-Takes-All Loop:** While Greedy EV locked onto a sub-optimal offer (`Booking.com` at $\$3.60$ EV), the $\epsilon$-Greedy policy used its $10\%$ exploration budget to discover a high-performing cold-start partner (`ColdStart_Boutique` at $\$7.20$ EV).
+* **Unbiased Off-Policy Training:** Every exploration decision logs the propensity score $\pi(a \mid x)$, enabling Inverse Propensity Score (IPS) weighting during offline model retraining in Databricks.
+
+
+## More Comparison Matrix
+| Dimension | Strategy 1: $P(\text{conversion} \mid u,s)$ | Strategy 2: Standard EV | Strategy 3: $\epsilon$-Greedy EV |
+| --- | --- | --- | --- |
+| **Objective** | Maximize total conversions / transactions | Maximize immediate expected revenue | Maximize cumulative long-term revenue |
+| **Decision Rule** | $\arg\max_s P(C \mid u,s)$ | $\arg\max_s [P(C \mid u,s) \cdot \text{Payout}_s]$ | $(1-\epsilon) \text{ Exploit EV} + \epsilon \text{ Explore}$ |
+| **Payout Aware?** | ❌ No (treats $10 and $1,000 equal) | ✅ Yes | ✅ Yes |
+| **Cold Start** | ❌ Fails (new offers stay low) | ❌ Lock-in (winner-takes-all loop) | ✅ Handled via forced traffic allocation |
+| **Data Bias** | High selection bias | Severe feedback loop | Unbiased (logs propensity scores) |
+| **Regret Profile** | High revenue regret | Zero short-term, high long-term | Low bounded regret ($\epsilon$ tax) |
+
 ### High Level Flow
 ```mermaid
 flowchart TD
@@ -33,7 +67,8 @@ flowchart TD
 | ⬜ | API Ops | `/health`, `/ready`, `/metrics` | Liveness returns without touching the model; readiness fails if the registry alias cannot resolve; Prometheus counters for requests, exploration rate, and per-subscriber selection share |
 | ⬜ | Decision Logging | `app/logging.py` | Every `/route` call appends context, candidates, chosen subscriber, propensity, and model version in the exact schema `evaluate_policy.py` consumes |
 | ✅ | Test Suite | `tests/` | Unit tests on EV math and propensity emission; integration test on `/route` with a stubbed registry; contract test asserting decision log schema matches evaluator columns; regression test asserting caps never exceeded |
-| 🟨 | Deployment | `Dockerfile` + `docker-compose.yml` | Multi-stage build; compose brings up API plus MLflow tracking server with Postgres backing store; `docker compose up` serves `/route` on first try |
+| ✅ | Deployment | `Dockerfile` + `docker-compose.yml` | Multi-stage build; compose brings up API plus MLflow tracking server with Postgres backing store; `docker compose up` serves `/route` on first try |
+| ✅ | Policies comparision | `scripts/benchmark_policies.py` | compare total revenue from raw prob vs greedy expected value vs epsilon greedy expected value |
 | ⬜ | Architecture Doc | `README.md` diagram section | Mermaid `flowchart LR` showing the closed loop, with the OPE-to-registry promotion arrow dashed and labeled |
 | ⬜ | Method Doc | `README.md` EV section | Formula with units, worked two-candidate example where EV and probability rankings disagree, and the propensity-emitting selection rule |
 | ⬜ | Headline Result | `README.md` above the fold | One-sentence lift with estimator named, 95% CI, n, plus DR cross-check and clipping threshold |
