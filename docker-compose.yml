@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  router-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: expected_value_router_api
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=models/lgbm_conversion_model.pkl
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
