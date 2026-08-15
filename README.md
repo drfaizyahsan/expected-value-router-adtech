@@ -10,7 +10,7 @@ To evaluate routing efficiency under real-world marketplace dynamics (cold-start
 2. **Greedy Expected Value ($\text{EV}$):** Multiplies $P(\text{conversion}) \times \text{Payout}$ (Revenue-first, pure exploitation).
 3. **$\epsilon$-Greedy Contextual Bandit ($\epsilon=0.10$):** Balances $90\%$ greedy EV exploitation with $10\%$ exploration.
 
-![Policy Strategy Benchmark](docs/assets/benchmark_results.png)
+![Policy Strategy Benchmark](docs/assets/hero_policy_comparison.png)
 
 ### Key Architectural Takeaways
 
