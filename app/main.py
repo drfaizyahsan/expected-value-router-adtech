@@ -5,8 +5,15 @@ import joblib
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
 
+from app.logging import log_routing_decision
+from app.schemas import (
+    CandidateSubscriber,
+    RankedCandidateResponse,
+    RoutingRequest,
+    RoutingResponse,
+    UserContext,
+)
 from src.policy import RoutingCandidate, rank_and_route_candidates
 
 # Model path setup
@@ -32,55 +39,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
-
-# ------------------------------------------------------------------
-# Pydantic Schemas (API Contracts - Pydantic v2 Compliant)
-# ------------------------------------------------------------------
-
-
-class UserContext(BaseModel):
-    user_device: str = Field(..., examples=["mobile"])
-    user_osName: str = Field(..., examples=["iOS"])
-    user_browserName: str = Field(..., examples=["Safari"])
-    user_lat: float = Field(..., ge=-90.0, le=90.0, examples=[45.5017])
-    user_lng: float = Field(..., ge=-180.0, le=180.0, examples=[-73.5673])
-    dest_lat: float = Field(..., ge=-90.0, le=90.0, examples=[40.7128])
-    dest_lng: float = Field(..., ge=-180.0, le=180.0, examples=[-74.0060])
-    booked_flight: bool = Field(default=False)
-    booked_hotel: bool = Field(default=False)
-    booked_rental: bool = Field(default=False)
-
-
-class CandidateSubscriber(BaseModel):
-    subscriber_id: str = Field(..., examples=["SUB_101"])
-    subscriber_name: str = Field(..., examples=["Expedia"])
-    subscriber_tier: str = Field(default="silver", examples=["gold"])
-    commission_rate: float = Field(..., ge=0.0, le=1.0, examples=[0.12])
-    booking_rate: float = Field(..., ge=0.0, examples=[250.00])
-    mobile_optimized: bool = Field(default=True)
-
-
-class RoutingRequest(BaseModel):
-    user: UserContext
-    candidates: list[CandidateSubscriber] = Field(..., min_length=1)
-
-
-class RankedCandidateResponse(BaseModel):
-    subscriber_id: str
-    subscriber_name: str
-    p_conversion: float
-    commission_rate: float
-    booking_rate: float
-    expected_value: float
-
-
-class RoutingResponse(BaseModel):
-    selected_subscriber_id: str
-    selected_subscriber_name: str
-    max_expected_value: float
-    is_fallback: bool
-    ranked_candidates: list[RankedCandidateResponse]
 
 
 # ------------------------------------------------------------------
@@ -194,22 +152,34 @@ def route_traffic(request: RoutingRequest):
         )
 
     # 3. Construct RoutingCandidate instances
-    routing_candidates = []
-    for i, candidate in enumerate(request.candidates):
-        routing_candidates.append(
-            RoutingCandidate(
-                subscriber_id=candidate.subscriber_id,
-                subscriber_name=candidate.subscriber_name,
-                commission_rate=candidate.commission_rate,
-                booking_rate=candidate.booking_rate,
-                p_conversion=float(p_conversions[i]),
-            )
+    routing_candidates = [
+        RoutingCandidate(
+            subscriber_id=candidate.subscriber_id,
+            subscriber_name=candidate.subscriber_name,
+            commission_rate=candidate.commission_rate,
+            booking_rate=candidate.booking_rate,
+            p_conversion=float(p_conversions[i]),
         )
+        for i, candidate in enumerate(request.candidates)
+    ]
 
-    # 4. Rank and route using Expected Value policy
-    decision = rank_and_route_candidates(routing_candidates, min_ev_threshold=0.05)
+    # 4. Rank, explore (epsilon-greedy), and compute propensity score in policy layer
+    decision = rank_and_route_candidates(
+        routing_candidates, epsilon=0.10, min_ev_threshold=0.05
+    )
 
-    # 5. Build response
+    # 5. Log decision context using propensity score from policy
+    log_routing_decision(
+        user_context=request.user.model_dump(),
+        candidates=[c.model_dump() for c in request.candidates],
+        selected_subscriber_id=decision.selected_subscriber_id,
+        selected_subscriber_name=decision.selected_subscriber_name,
+        max_expected_value=decision.max_expected_value,
+        propensity_score=decision.propensity_score,  # <-- Extracted directly from decision
+        policy_version="epsilon_greedy_v1",
+    )
+
+    # 6. Build response payload
     ranked_responses = [
         RankedCandidateResponse(
             subscriber_id=c["subscriber_id"],
@@ -227,5 +197,7 @@ def route_traffic(request: RoutingRequest):
         selected_subscriber_name=decision.selected_subscriber_name,
         max_expected_value=decision.max_expected_value,
         is_fallback=decision.is_fallback,
+        propensity_score=decision.propensity_score,  # <-- Passed directly to response
+        policy_version="epsilon_greedy_v1",
         ranked_candidates=ranked_responses,
     )
