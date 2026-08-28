@@ -1,116 +1,112 @@
 import os
+from unittest.mock import MagicMock, patch
 
 import joblib
 import numpy as np
 import pandas as pd
 import pytest
 
-from src.train import (
-    CAT_COLS,
-    FEATURE_COLS,
-    TARGET_COL,
-    load_data,
-    train_conversion_model,
-)
+import src.train as train_module
+from src.train import train_and_evaluate
 
 
 @pytest.fixture
-def sample_featured_df():
-    """Generates a synthetic Pandas DataFrame with valid feature distributions for testing."""
-    np.random.seed(42)
-    n_samples = 100
-
-    data = {
-        "user_device": np.random.choice(["desktop", "mobile", "tablet"], n_samples),
-        "user_osName": np.random.choice(
-            ["macOS", "Windows", "Android", "iOS"], n_samples
-        ),
-        "user_browserName_clean": np.random.choice(
-            ["chrome", "safari", "firefox"], n_samples
-        ),
-        "subscriber_tier": np.random.choice(
-            ["bronze", "silver", "gold", "platinum"], n_samples
-        ),  # Added column
-        "travel_distance_km": np.random.uniform(50.0, 3000.0, n_samples),
-        "is_long_haul": np.random.choice([0, 1], n_samples),
-        "adr_clean": np.random.uniform(50.0, 500.0, n_samples),
-        "cross_sell_score": np.random.choice([0.0, 1.0, 2.0], n_samples),
-        "mobile_ux_friction": np.random.choice([0, 1], n_samples),
-        "expected_gross_commission": np.random.uniform(5.0, 60.0, n_samples),
-        TARGET_COL: np.random.choice([0, 1], n_samples, p=[0.8, 0.2]),
-    }
-
-    df = pd.DataFrame(data)
-    return df
+def mock_mlflow(monkeypatch):
+    """Mocks MLflow tracking functions to prevent disk writes/network calls during test runs."""
+    mock_run = MagicMock()
+    monkeypatch.setattr(train_module.mlflow, "set_experiment", MagicMock())
+    monkeypatch.setattr(
+        train_module.mlflow, "start_run", MagicMock(return_value=mock_run)
+    )
+    monkeypatch.setattr(train_module.mlflow, "log_params", MagicMock())
+    monkeypatch.setattr(train_module.mlflow, "log_metrics", MagicMock())
+    monkeypatch.setattr(train_module.mlflow, "log_artifact", MagicMock())
+    return mock_run
 
 
-def test_load_data_missing_file():
-    """Ensures load_data raises FileNotFoundError when input Parquet file is missing."""
-    with pytest.raises(FileNotFoundError):
-        load_data("data/processed/non_existent_file.parquet")
+def test_train_and_evaluate_synthetic_fallback(tmp_path, monkeypatch, mock_mlflow):
+    """Verifies complete training execution using the synthetic data fallback when no CSV exists."""
+    monkeypatch.chdir(tmp_path)
 
+    train_and_evaluate()
 
-def test_load_data_categorical_conversion(tmp_path, sample_featured_df):
-    """Ensures load_data correctly converts specified string columns to 'category' dtypes."""
-    parquet_path = tmp_path / "test_featured.parquet"
-    sample_featured_df.to_parquet(parquet_path)
+    # Check model artifact creation
+    expected_model_path = tmp_path / "models" / "lgbm_conversion_model.pkl"
+    assert expected_model_path.exists()
 
-    df_loaded = load_data(str(parquet_path))
+    # Reload model to ensure validity
+    model = joblib.load(expected_model_path)
+    assert hasattr(model, "predict_proba")
 
-    for cat_col in CAT_COLS:
-        assert df_loaded[cat_col].dtype.name == "category"
-
-
-def test_train_conversion_model_execution(sample_featured_df):
-    """Verifies that LightGBM trains successfully and produces valid evaluation metrics."""
-    # Cast categorical columns dynamically using CAT_COLS
-    for col in CAT_COLS:
-        sample_featured_df[col] = sample_featured_df[col].astype("category")
-
-    params = {
-        "objective": "binary",
-        "metric": "binary_logloss",
-        "boosting_type": "gbdt",
-        "n_estimators": 10,
-        "verbose": -1,
-    }
-
-    model, metrics = train_conversion_model(sample_featured_df, params=params)
-
-    # Check metrics structure and bounds
-    assert "val_roc_auc" in metrics
-    assert "val_log_loss" in metrics
-    assert 0.0 <= metrics["val_roc_auc"] <= 1.0
-    assert metrics["val_log_loss"] >= 0.0
-
-    # Test probability output bounds on sample input
-    X_sample = sample_featured_df[FEATURE_COLS].iloc[:5]
-    probs = model.predict_proba(X_sample)[:, 1]
-
-    assert len(probs) == 5
-    assert np.all((probs >= 0.0) & (probs <= 1.0))
-
-
-def test_model_artifact_persistence(tmp_path, sample_featured_df):
-    """Verifies that the trained LightGBM model can be serialized and reloaded via joblib."""
-    for col in CAT_COLS:
-        sample_featured_df[col] = sample_featured_df[col].astype("category")
-
-    model, _ = train_conversion_model(
-        sample_featured_df,
-        params={"objective": "binary", "n_estimators": 5, "verbose": -1},
+    # Verify MLflow logging calls
+    train_module.mlflow.log_params.assert_called_once()
+    train_module.mlflow.log_metrics.assert_called_once()
+    train_module.mlflow.log_artifact.assert_called_with(
+        "models/lgbm_conversion_model.pkl"
     )
 
-    artifact_path = tmp_path / "lgbm_conversion_model.pkl"
-    joblib.dump(model, artifact_path)
+    # Inspect logged metrics to ensure model beats baseline
+    logged_metrics = train_module.mlflow.log_metrics.call_args[0][0]
+    assert logged_metrics["lgbm_pr_auc"] > logged_metrics["baseline_pr_auc"]
+    assert logged_metrics["pr_auc_lift_percent"] > 0.0
 
-    assert os.path.exists(artifact_path)
 
-    # Reload model and verify prediction consistency
-    reloaded_model = joblib.load(artifact_path)
-    X_test = sample_featured_df[FEATURE_COLS].iloc[:2]
+def test_train_and_evaluate_with_csv(tmp_path, monkeypatch, mock_mlflow):
+    """Verifies that train_and_evaluate correctly reads and processes an existing CSV file."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("data", exist_ok=True)
 
-    original_preds = model.predict_proba(X_test)
-    reloaded_preds = reloaded_model.predict_proba(X_test)
+    # Generate synthetic CSV file with deterministic target relationship
+    np.random.seed(42)
+    n_samples = 500
+    commission_rate = np.random.uniform(0.05, 0.25, n_samples)
+    booked_flight = np.random.choice([0, 1], size=n_samples)
+    distance_km = np.random.uniform(50, 1500, n_samples)
 
-    np.testing.assert_array_almost_equal(original_preds, reloaded_preds)
+    # True probability linked to features so model learns real signal
+    true_prob = 1 / (
+        1
+        + np.exp(
+            -(-2.0 + 4.0 * commission_rate + 1.0 * booked_flight - 0.001 * distance_km)
+        )
+    )
+    converted = np.random.binomial(1, true_prob)
+
+    df = pd.DataFrame(
+        {
+            "distance_km": distance_km,
+            "commission_rate": commission_rate,
+            "booking_rate": np.random.uniform(100, 500, n_samples),
+            "is_mobile": np.random.choice([0, 1], size=n_samples),
+            "booked_flight": booked_flight,
+            "converted": converted,
+        }
+    )
+    df.to_csv("data/train_conversions.csv", index=False)
+
+    train_and_evaluate()
+
+    expected_model_path = tmp_path / "models" / "lgbm_conversion_model.pkl"
+    assert expected_model_path.exists()
+
+    logged_metrics = train_module.mlflow.log_metrics.call_args[0][0]
+    assert "baseline_pr_auc" in logged_metrics
+    assert "lgbm_pr_auc" in logged_metrics
+    assert logged_metrics["lgbm_pr_auc"] > logged_metrics["baseline_pr_auc"]
+
+
+def test_stratified_baseline_assertion_failure(tmp_path, monkeypatch, mock_mlflow):
+    """Ensures an AssertionError is raised if LightGBM fails to beat the random baseline."""
+    monkeypatch.chdir(tmp_path)
+
+    # Mock average_precision_score to simulate model underperforming baseline
+    def mock_average_precision(y_true, y_pred):
+        if np.array_equal(y_pred, y_pred.astype(float)) and len(np.unique(y_pred)) > 2:
+            return 0.10
+        return 0.50
+
+    with (
+        patch("src.train.average_precision_score", side_effect=mock_average_precision),
+        pytest.raises(AssertionError, match="failed to beat baseline"),
+    ):
+        train_and_evaluate()
