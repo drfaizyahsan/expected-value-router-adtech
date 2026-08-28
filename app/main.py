@@ -14,7 +14,7 @@ from app.schemas import (
     UserContext,
 )
 from src.feature_engineering import CAT_COLS, FEATURE_COLS
-from src.policy import epsilon_greedy_policy
+from src.policy import rank_and_route_candidates
 
 app = FastAPI(
     title="Expected Value Traffic Router API",
@@ -114,9 +114,9 @@ def route_traffic(payload: RoutingRequest):
     mobile_ux_friction = 1 if user.user_device in ["mobile", "tablet"] else 0
     browser_clean = user.user_browserName.lower().strip()
 
-    evaluated_candidates = []
+    # evaluated_candidates = []
     ranked_candidates_response: list[RankedCandidateResponse] = []
-
+    #
     # Process each CandidateSubscriber instance
     for cand in candidates:
         input_df = build_candidate_feature_matrix(
@@ -144,15 +144,15 @@ def route_traffic(payload: RoutingRequest):
 
         expected_value = float(p_conv * cand.booking_rate * cand.commission_rate)
 
-        cand_record = {
-            "subscriber_id": cand.subscriber_id,
-            "subscriber_name": cand.subscriber_name,
-            "p_conversion": p_conv,
-            "commission_rate": cand.commission_rate,
-            "booking_rate": cand.booking_rate,
-            "expected_value": expected_value,
-        }
-        evaluated_candidates.append(cand_record)
+        # cand_record = {
+        #     "subscriber_id": cand.subscriber_id,
+        #     "subscriber_name": cand.subscriber_name,
+        #     "p_conversion": p_conv,
+        #     "commission_rate": cand.commission_rate,
+        #     "booking_rate": cand.booking_rate,
+        #     "expected_value": expected_value,
+        # }
+        # evaluated_candidates.append(cand_record)
 
         ranked_candidates_response.append(
             RankedCandidateResponse(
@@ -165,14 +165,26 @@ def route_traffic(payload: RoutingRequest):
             )
         )
 
-    # Sort evaluated candidates by expected value descending
-    evaluated_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
-    ranked_candidates_response.sort(key=lambda x: x.expected_value, reverse=True)
+    # # Sort evaluated candidates by expected value descending
+    # evaluated_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
+    # ranked_candidates_response.sort(key=lambda x: x.expected_value, reverse=True)
 
     # Execute policy routing
-    selected_candidate, propensity, is_exploration = epsilon_greedy_policy(
-        evaluated_candidates=evaluated_candidates,
-        epsilon=0.10,
+    # selected_candidate, propensity, is_exploration = rank_and_route_candidates(
+    #     evaluated_candidates=evaluated_candidates,
+    #     epsilon=0.10,
+    # )
+    decision = rank_and_route_candidates(
+        candidates=ranked_candidates_response, epsilon=0.10
+    )
+    selected_candidate, propensity, is_exploration = (
+        {
+            "subscriber_id": decision.selected_subscriber_id,
+            "subscriber_name": decision.selected_subscriber_name,
+            "expected_value": decision.max_expected_value,
+        },
+        decision.propensity_score,
+        decision.is_exploration,
     )
 
     # Log routing decision
@@ -197,5 +209,6 @@ def route_traffic(payload: RoutingRequest):
         is_fallback=is_exploration,
         propensity_score=propensity,
         policy_version="epsilon_greedy_v1",
-        ranked_candidates=ranked_candidates_response,
+        ranked_candidates=decision.all_ranked_candidates,
+        # ranked_candidates=ranked_candidates_response,
     )
