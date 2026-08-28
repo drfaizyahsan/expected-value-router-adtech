@@ -36,6 +36,75 @@ To evaluate routing efficiency under real-world marketplace dynamics (cold-start
 | **Data Bias** | High selection bias | Severe feedback loop | Unbiased (logs propensity scores) |
 | **Regret Profile** | High linear regret $O(T)$ | Linear regret $O(T)$ (trapped in local optima) | Linear regret $O(\epsilon T)$ (Decaying $\epsilon_t$ or UCB required for sub-linear $O(\log T)$) |
 
+## Useful commands
+
+1. Train the model
+
+`pdm run python -m src.train`
+
+2. To run the app
+
+` pdm run uvicorn app.main:app --reload`
+
+3. Health Check
+
+`curl -X 'GET' 'http://localhost:8000/health'`
+
+4. Test the app
+```
+curl -X 'POST' \
+  'http://localhost:8000/route' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "user": {
+    "user_device": "mobile",
+    "user_osName": "iOS",
+    "user_browserName": "Safari",
+    "user_lat": 45.5017,
+    "user_lng": -73.5673,
+    "dest_lat": 40.7128,
+    "dest_lng": -74.0060,
+    "booked_flight": true,
+    "booked_hotel": false,
+    "booked_rental": false
+  },
+  "candidates": [
+    {
+      "subscriber_id": "SUB_EXPEDIA",
+      "subscriber_name": "Expedia",
+      "subscriber_tier": "platinum",
+      "commission_rate": 0.12,
+      "booking_rate": 350.00,
+      "mobile_optimized": true
+    },
+    {
+      "subscriber_id": "SUB_BOOKING",
+      "subscriber_name": "Booking.com",
+      "subscriber_tier": "gold",
+      "commission_rate": 0.15,
+      "booking_rate": 280.00,
+      "mobile_optimized": true
+    }
+  ]
+}'
+
+```
+
+Expected output:
+```
+{"selected_subscriber_id":"SUB_EXPEDIA",
+"selected_subscriber_name":"Expedia","max_expected_value":10.927,
+"is_fallback":false,
+"ranked_candidates":[{"subscriber_id":"SUB_EXPEDIA",
+"subscriber_name":"Expedia","p_conversion":0.2601665168317225,
+"commission_rate":0.12,"booking_rate":350.0,"expected_value":10.927},
+{"subscriber_id":"SUB_BOOKING","subscriber_name":"Booking.com",
+"p_conversion":0.2601665168317225,"commission_rate":0.15,"booking_rate":280.0,
+"expected_value":10.927}]}%   
+```
+
+
 ### High Level Flow
 ```mermaid
 flowchart TD

@@ -4,12 +4,21 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from src.app import app, calculate_haversine_distance
+import app.main as main_module
+from app.main import app, calculate_haversine_distance
 
 
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def mock_decision_logger(monkeypatch):
+    """Mocks decision logging to avoid writing test logs to disk during test runs."""
+    mock_log = MagicMock()
+    monkeypatch.setattr(main_module, "log_routing_decision", mock_log)
+    return mock_log
 
 
 def test_haversine_distance():
@@ -28,9 +37,7 @@ def test_health_check(client):
 
 def test_route_traffic_service_unavailable(client, monkeypatch):
     """Ensures 503 is returned when model artifact is missing."""
-    import src.app
-
-    monkeypatch.setattr(src.app, "model_artifact", None)
+    monkeypatch.setattr(main_module, "model_artifact", None)
 
     payload = {
         "user": {
@@ -56,10 +63,8 @@ def test_route_traffic_service_unavailable(client, monkeypatch):
     assert response.status_code == 503
 
 
-def test_route_traffic_successful_routing(client, monkeypatch):
-    """Tests complete routing flow with mock LightGBM predictions."""
-    import src.app
-
+def test_route_traffic_successful_routing(client, monkeypatch, mock_decision_logger):
+    """Tests complete routing flow with mock LightGBM predictions and propensity scores."""
     # Mock LightGBM model returning fixed probabilities
     mock_model = MagicMock()
     # Return 0.10 for candidate 1 ($2.00 EV), 0.30 for candidate 2 ($12.00 EV)
@@ -69,7 +74,7 @@ def test_route_traffic_successful_routing(client, monkeypatch):
             [0.70, 0.30],
         ]
     )
-    monkeypatch.setattr(src.app, "model_artifact", mock_model)
+    monkeypatch.setattr(main_module, "model_artifact", mock_model)
 
     payload = {
         "user": {
@@ -105,9 +110,17 @@ def test_route_traffic_successful_routing(client, monkeypatch):
 
     data = response.json()
     assert data["is_fallback"] is False
-    assert data["selected_subscriber_id"] == "SUB_HIGH"
-    assert data["max_expected_value"] == 12.00
+    assert data["selected_subscriber_id"] in [
+        "SUB_HIGH",
+        "SUB_LOW",
+    ]  # Accounts for epsilon exploration
+    assert "propensity_score" in data
+    assert 0.0 < data["propensity_score"] <= 1.0
+    assert data["policy_version"] == "epsilon_greedy_v1"
     assert len(data["ranked_candidates"]) == 2
+
+    # Verify decision logging function was called once per request
+    assert mock_decision_logger.call_count == 1
 
 
 def test_route_traffic_pydantic_validation_error(client):
