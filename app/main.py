@@ -1,203 +1,147 @@
 import os
-from contextlib import asynccontextmanager
 
 import joblib
-import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
-from app.logging import log_routing_decision
-from app.schemas import (
-    CandidateSubscriber,
-    RankedCandidateResponse,
-    RoutingRequest,
-    RoutingResponse,
-    UserContext,
-)
-from src.policy import RoutingCandidate, rank_and_route_candidates
+from src.feature_engineering import CAT_COLS, FEATURE_COLS
 
-# Model path setup
+app = FastAPI(title="Expected Value Traffic Router", version="1.0.0")
+
 MODEL_PATH = os.getenv("MODEL_PATH", "models/lgbm_conversion_model.pkl")
-model_artifact = None
+model = None
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Loads model artifact into memory on server startup."""
-    global model_artifact
+class Candidate(BaseModel):
+    partner_id: str
+    cross_sell_score: float = 0.0
+    mobile_ux_friction: int = 0
+    expected_gross_commission: float = 0.0
+
+
+class RouteRequest(BaseModel):
+    user_device: str = "desktop"
+    user_osName: str = "Windows"
+    user_browserName_clean: str = "chrome"
+    subscriber_tier: str = "bronze"
+    travel_distance_km: float = 500.0
+    is_long_haul: int = 0
+    adr_clean: float = 150.0
+    candidates: list[Candidate] = Field(..., min_items=1)
+
+
+class CandidateRouteScore(BaseModel):
+    partner_id: str
+    p_conversion: float
+    expected_gross_commission: float
+    expected_value: float
+
+
+class RouteResponse(BaseModel):
+    selected_partner_id: str
+    max_expected_value: float
+    routing_scores: list[CandidateRouteScore]
+
+
+def load_model():
+    global model
     if os.path.exists(MODEL_PATH):
-        model_artifact = joblib.load(MODEL_PATH)
+        model = joblib.load(MODEL_PATH)
     else:
-        # Fallback for testing environments where model artifact may be mocked/built dynamically
-        model_artifact = None
-    yield
+        model = None
 
 
-app = FastAPI(
-    title="Expected Value Traffic Router API",
-    description="Real-time ad traffic routing service powered by LightGBM & Expected Value policy.",
-    version="1.0.0",
-    lifespan=lifespan,
-)
+@app.on_event("startup")
+def startup_event():
+    load_model()
 
 
-# ------------------------------------------------------------------
-# Feature Extraction Helpers
-# ------------------------------------------------------------------
-
-
-def calculate_haversine_distance(
-    lat1: float, lon1: float, lat2: float, lon2: float
-) -> float:
-    """Calculates geodesic distance between two points in kilometers."""
-    r = 6371.0  # Earth radius in km
-    phi1, phi2 = np.radians(lat1), np.radians(lat2)
-    delta_phi = np.radians(lat2 - lat1)
-    delta_lambda = np.radians(lon2 - lon1)
-
-    a = (
-        np.sin(delta_phi / 2.0) ** 2
-        + np.cos(phi1) * np.cos(phi2) * np.sin(delta_lambda / 2.0) ** 2
-    )
-    c = 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
-    return float(r * c)
-
-
-def build_candidate_feature_matrix(
-    user: UserContext, candidates: list[CandidateSubscriber]
-) -> pd.DataFrame:
-    """Transforms raw request context into the exact feature matrix expected by LightGBM."""
-    dist_km = calculate_haversine_distance(
-        user.user_lat, user.user_lng, user.dest_lat, user.dest_lng
-    )
-    is_long_haul = 1 if dist_km >= 1000.0 else 0
-    cross_sell_score = float(sum([user.booked_flight, user.booked_rental]))
-
-    # Standardize browser name
-    browser_clean = user.user_browserName.strip().lower()
-
+def build_candidate_feature_matrix(payload: dict) -> pd.DataFrame:
+    """Transforms raw API route request payload into aligned pandas feature DataFrame."""
     rows = []
-    for c in candidates:
-        # Calculate mobile friction (1 if on mobile and subscriber site is NOT mobile optimized)
-        friction = (
-            1
-            if (user.user_device.lower() == "mobile" and not c.mobile_optimized)
-            else 0
-        )
-        expected_gross_comm = c.commission_rate * c.booking_rate
+    candidates = payload.get("candidates", [])
 
-        rows.append(
-            {
-                "user_device": user.user_device.lower(),
-                "user_osName": user.user_osName,
-                "user_browserName_clean": browser_clean,
-                "subscriber_tier": c.subscriber_tier.lower(),
-                "travel_distance_km": dist_km,
-                "is_long_haul": is_long_haul,
-                "adr_clean": c.booking_rate,
-                "cross_sell_score": cross_sell_score,
-                "mobile_ux_friction": friction,
-                "expected_gross_commission": expected_gross_comm,
-            }
-        )
+    for cand in candidates:
+        row = {
+            "user_device": payload.get("user_device", "desktop"),
+            "user_osName": payload.get("user_osName", "Windows"),
+            "user_browserName_clean": payload.get("user_browserName_clean", "chrome"),
+            "subscriber_tier": payload.get("subscriber_tier", "bronze"),
+            "travel_distance_km": float(payload.get("travel_distance_km", 500.0)),
+            "is_long_haul": int(payload.get("is_long_haul", 0)),
+            "adr_clean": float(payload.get("adr_clean", 150.0)),
+            "cross_sell_score": float(cand.get("cross_sell_score", 0.0)),
+            "mobile_ux_friction": int(cand.get("mobile_ux_friction", 0)),
+            "expected_gross_commission": float(
+                cand.get("expected_gross_commission", 0.0)
+            ),
+        }
+        rows.append(row)
 
     df = pd.DataFrame(rows)
 
-    # Cast categoricals matching train schema
-    cat_cols = [
-        "user_device",
-        "user_osName",
-        "user_browserName_clean",
-        "subscriber_tier",
-    ]
-    for col in cat_cols:
-        df[col] = df[col].astype("category")
+    # 1. Enforce strict column ordering matching training contract
+    df = df[FEATURE_COLS]
+
+    # 2. Align categorical dtypes with LightGBM's trained category levels
+    if model is not None and hasattr(model, "booster_"):
+        trained_categories = model.booster_.pandas_categorical
+        for idx, col in enumerate(FEATURE_COLS):
+            if col in CAT_COLS and trained_categories[idx] is not None:
+                categories = trained_categories[idx]
+                df[col] = pd.Categorical(df[col], categories=categories)
+    else:
+        for col in CAT_COLS:
+            df[col] = df[col].astype("category")
 
     return df
 
 
-# ------------------------------------------------------------------
-# API Endpoints
-# ------------------------------------------------------------------
-
-
-@app.get("/health", status_code=status.HTTP_200_OK)
+@app.get("/health")
 def health_check():
-    """Health check endpoint for load balancers."""
-    return {
-        "status": "healthy",
-        "model_loaded": model_artifact is not None,
-    }
+    return {"status": "ok", "model_loaded": model is not None}
 
 
-@app.post("/route", response_model=RoutingResponse, status_code=status.HTTP_200_OK)
-def route_traffic(request: RoutingRequest):
-    """Predicts conversion probabilities across candidate subscribers and routes traffic to max EV target."""
-    if model_artifact is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model artifact is not loaded. Train model or supply valid model checkpoint.",
-        )
+@app.post("/route", response_model=RouteResponse)
+def route_traffic(request: RouteRequest):
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model artifact is not loaded.")
 
-    # 1. Build feature matrix for all candidates in the batch
-    X_features = build_candidate_feature_matrix(request.user, request.candidates)
-
-    # 2. Vectorized LightGBM probability predictions
     try:
-        p_conversions = model_artifact.predict_proba(X_features)[:, 1]
-    except (ValueError, KeyError, AttributeError, RuntimeError) as e:
+        payload = request.dict()
+        X_candidates = build_candidate_feature_matrix(payload)
+
+        # Predict conversion probabilities
+        probs = model.predict_proba(X_candidates)[:, 1]
+
+        routing_scores = []
+        best_partner_id = None
+        max_ev = -1.0
+
+        for idx, cand in enumerate(request.candidates):
+            p_conv = float(probs[idx])
+            comm = float(cand.expected_gross_commission)
+            ev = p_conv * comm
+
+            score_entry = CandidateRouteScore(
+                partner_id=cand.partner_id,
+                p_conversion=p_conv,
+                expected_gross_commission=comm,
+                expected_value=ev,
+            )
+            routing_scores.append(score_entry)
+
+            if ev > max_ev:
+                max_ev = ev
+                best_partner_id = cand.partner_id
+
+        return RouteResponse(
+            selected_partner_id=best_partner_id,
+            max_expected_value=max_ev,
+            routing_scores=routing_scores,
+        )
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Inference failed: {e!s}",
+            status_code=500, detail=f"Inference execution failed: {e!s}"
         )
-
-    # 3. Construct RoutingCandidate instances
-    routing_candidates = [
-        RoutingCandidate(
-            subscriber_id=candidate.subscriber_id,
-            subscriber_name=candidate.subscriber_name,
-            commission_rate=candidate.commission_rate,
-            booking_rate=candidate.booking_rate,
-            p_conversion=float(p_conversions[i]),
-        )
-        for i, candidate in enumerate(request.candidates)
-    ]
-
-    # 4. Rank, explore (epsilon-greedy), and compute propensity score in policy layer
-    decision = rank_and_route_candidates(
-        routing_candidates, epsilon=0.10, min_ev_threshold=0.05
-    )
-
-    # 5. Log decision context using propensity score from policy
-    log_routing_decision(
-        user_context=request.user.model_dump(),
-        candidates=[c.model_dump() for c in request.candidates],
-        selected_subscriber_id=decision.selected_subscriber_id,
-        selected_subscriber_name=decision.selected_subscriber_name,
-        max_expected_value=decision.max_expected_value,
-        propensity_score=decision.propensity_score,  # <-- Extracted directly from decision
-        policy_version="epsilon_greedy_v1",
-    )
-
-    # 6. Build response payload
-    ranked_responses = [
-        RankedCandidateResponse(
-            subscriber_id=c["subscriber_id"],
-            subscriber_name=c["subscriber_name"],
-            p_conversion=c["p_conversion"],
-            commission_rate=c["commission_rate"],
-            booking_rate=c["booking_rate"],
-            expected_value=c["expected_value"],
-        )
-        for c in decision.all_ranked_candidates
-    ]
-
-    return RoutingResponse(
-        selected_subscriber_id=decision.selected_subscriber_id,
-        selected_subscriber_name=decision.selected_subscriber_name,
-        max_expected_value=decision.max_expected_value,
-        is_fallback=decision.is_fallback,
-        propensity_score=decision.propensity_score,  # <-- Passed directly to response
-        policy_version="epsilon_greedy_v1",
-        ranked_candidates=ranked_responses,
-    )
