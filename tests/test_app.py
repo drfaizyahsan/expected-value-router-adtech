@@ -24,25 +24,34 @@ def test_health_check():
 
 def test_route_traffic_success():
     payload = {
-        "user_device": "desktop",
-        "user_osName": "Windows",
-        "user_browserName_clean": "chrome",
-        "subscriber_tier": "platinum",
-        "travel_distance_km": 800.0,
-        "is_long_haul": 0,
-        "adr_clean": 200.0,
+        "user": {
+            "user_device": "desktop",
+            "user_osName": "Windows",
+            "user_browserName": "Chrome",
+            "user_lat": 45.5017,
+            "user_lng": -73.5673,
+            "dest_lat": 40.7128,
+            "dest_lng": -74.0060,
+            "booked_flight": True,
+            "booked_hotel": False,
+            "booked_rental": False,
+        },
         "candidates": [
             {
-                "partner_id": "partner_a",
-                "cross_sell_score": 1.0,
-                "mobile_ux_friction": 0,
-                "expected_gross_commission": 50.0,
+                "subscriber_id": "SUB_101",
+                "subscriber_name": "Expedia",
+                "subscriber_tier": "gold",
+                "commission_rate": 0.12,
+                "booking_rate": 250.00,
+                "mobile_optimized": True,
             },
             {
-                "partner_id": "partner_b",
-                "cross_sell_score": 0.0,
-                "mobile_ux_friction": 0,
-                "expected_gross_commission": 10.0,
+                "subscriber_id": "SUB_102",
+                "subscriber_name": "Booking.com",
+                "subscriber_tier": "silver",
+                "commission_rate": 0.10,
+                "booking_rate": 200.00,
+                "mobile_optimized": True,
             },
         ],
     }
@@ -51,6 +60,9 @@ def test_route_traffic_success():
     assert response.status_code == 200
 
     data = response.json()
-    assert "selected_partner_id" in data
+    assert "selected_subscriber_id" in data
+    assert "selected_subscriber_name" in data
     assert "max_expected_value" in data
-    assert len(data["routing_scores"]) == 2
+    assert "propensity_score" in data
+    assert "ranked_candidates" in data
+    assert len(data["ranked_candidates"]) == 2

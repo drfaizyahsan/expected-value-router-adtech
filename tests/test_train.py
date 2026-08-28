@@ -5,6 +5,7 @@ import pytest
 
 import src.train as train_module
 from app.main import build_candidate_feature_matrix
+from app.schemas import CandidateSubscriber, UserContext
 from src.feature_engineering import CAT_COLS, FEATURE_COLS
 from src.train import load_data, train_and_evaluate
 
@@ -47,32 +48,57 @@ def test_trained_model_inference_compatibility_with_route(
     monkeypatch.chdir(tmp_path)
     model = train_and_evaluate()
 
-    raw_request_payload = {
-        "user_device": "mobile",
-        "user_osName": "iOS",
-        "user_browserName_clean": "safari",
-        "subscriber_tier": "gold",
-        "travel_distance_km": 450.0,
-        "is_long_haul": 0,
-        "adr_clean": 180.0,
-        "candidates": [
-            {
-                "partner_id": "p_101",
-                "cross_sell_score": 1.0,
-                "mobile_ux_friction": 0,
-                "expected_gross_commission": 25.0,
-            },
-            {
-                "partner_id": "p_102",
-                "cross_sell_score": 0.0,
-                "mobile_ux_friction": 1,
-                "expected_gross_commission": 15.0,
-            },
-        ],
-    }
+    user = UserContext(
+        user_device="mobile",
+        user_osName="iOS",
+        user_browserName="Safari",
+        user_lat=45.5017,
+        user_lng=-73.5673,
+        dest_lat=40.7128,
+        dest_lng=-74.0060,
+        booked_flight=True,
+        booked_hotel=False,
+        booked_rental=False,
+    )
 
-    X_candidate = build_candidate_feature_matrix(raw_request_payload)
-    probs = model.predict_proba(X_candidate)[:, 1]
+    candidates = [
+        CandidateSubscriber(
+            subscriber_id="p_101",
+            subscriber_name="Expedia",
+            subscriber_tier="gold",
+            commission_rate=0.10,
+            booking_rate=250.0,
+            mobile_optimized=True,
+        ),
+        CandidateSubscriber(
+            subscriber_id="p_102",
+            subscriber_name="Booking.com",
+            subscriber_tier="silver",
+            commission_rate=0.08,
+            booking_rate=180.0,
+            mobile_optimized=False,
+        ),
+    ]
+
+    dist_km = 500.0
+    is_long_haul = 0
+    cross_sell_score = 1.0
+    mobile_ux_friction = 1
+    browser_clean = user.user_browserName.lower().strip()
+
+    probs = []
+    for cand in candidates:
+        input_df = build_candidate_feature_matrix(
+            user=user,
+            candidate=cand,
+            dist_km=dist_km,
+            is_long_haul=is_long_haul,
+            cross_sell_score=cross_sell_score,
+            mobile_ux_friction=mobile_ux_friction,
+            browser_clean=browser_clean,
+        )
+        p_conv = float(model.predict_proba(input_df)[0, 1])
+        probs.append(p_conv)
 
     assert len(probs) == 2
-    assert np.all((probs >= 0.0) & (probs <= 1.0))
+    assert np.all((np.array(probs) >= 0.0) & (np.array(probs) <= 1.0))

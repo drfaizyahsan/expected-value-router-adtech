@@ -39,6 +39,54 @@ def calculate_expected_value(
     return float(np.round(max(0.0, ev), 4))
 
 
+def compute_inverse_propensity_score(
+    observed_reward: float,
+    propensity_score: float,
+    min_propensity_clip: float = 0.01,
+) -> float:
+    """Computes Inverse Propensity Score (IPS) weighted estimator for off-policy evaluation.
+
+    Formula:
+        IPS = observed_reward / max(propensity_score, min_propensity_clip)
+    """
+    clipped_propensity = max(float(propensity_score), min_propensity_clip)
+    return float(np.round(observed_reward / clipped_propensity, 6))
+
+
+def epsilon_greedy_policy(
+    evaluated_candidates: list[dict],
+    epsilon: float = 0.10,
+) -> tuple[dict, float, bool]:
+    """Selects a candidate using Epsilon-Greedy strategy and calculates its propensity pi(a|x).
+
+    Assumes evaluated_candidates is already sorted descending by expected_value.
+
+    Returns:
+        tuple[dict, float, bool]: (chosen_candidate, propensity_score, is_exploration)
+    """
+    num_candidates = len(evaluated_candidates)
+    best_candidate = evaluated_candidates[0]
+    is_exploration = False
+
+    if random.random() < epsilon and num_candidates > 1:
+        # Explore: Choose uniformly at random across all candidates
+        chosen_candidate = random.choice(evaluated_candidates)
+        is_exploration = True
+    else:
+        # Exploit: Choose candidate with top Expected Value
+        chosen_candidate = best_candidate
+
+    # Propensity Score pi(a|x) Calculation
+    if chosen_candidate["subscriber_id"] == best_candidate["subscriber_id"]:
+        # Top arm propensity: (1 - epsilon) + (epsilon / K)
+        propensity_score = (1.0 - epsilon) + (epsilon / num_candidates)
+    else:
+        # Non-top arm propensity: epsilon / K
+        propensity_score = epsilon / num_candidates
+
+    return chosen_candidate, float(np.round(propensity_score, 6)), is_exploration
+
+
 def rank_and_route_candidates(
     candidates: list[RoutingCandidate],
     epsilon: float = 0.10,
@@ -104,30 +152,16 @@ def rank_and_route_candidates(
     # ------------------------------------------------------------------
     # Epsilon-Greedy Policy Selection & Propensity Calculation
     # ------------------------------------------------------------------
-    num_candidates = len(evaluated_candidates)
-    is_exploration = False
-
-    if random.random() < epsilon and num_candidates > 1:
-        # Explore: Choose uniformly at random across all candidates
-        chosen_candidate = random.choice(evaluated_candidates)
-        is_exploration = True
-    else:
-        # Exploit: Choose candidate with top Expected Value
-        chosen_candidate = best_candidate
-
-    # Propensity Score pi(a|x) Calculation
-    if chosen_candidate["subscriber_id"] == best_candidate["subscriber_id"]:
-        # Top arm propensity: (1 - epsilon) + (epsilon / K)
-        propensity_score = (1.0 - epsilon) + (epsilon / num_candidates)
-    else:
-        # Non-top arm propensity: epsilon / K
-        propensity_score = epsilon / num_candidates
+    chosen_candidate, propensity_score, is_exploration = epsilon_greedy_policy(
+        evaluated_candidates=evaluated_candidates,
+        epsilon=epsilon,
+    )
 
     decision = RoutingDecision(
         selected_subscriber_id=chosen_candidate["subscriber_id"],
         selected_subscriber_name=chosen_candidate["subscriber_name"],
         max_expected_value=chosen_candidate["expected_value"],
-        propensity_score=float(np.round(propensity_score, 6)),
+        propensity_score=propensity_score,
         is_exploration=is_exploration,
         is_fallback=False,
         all_ranked_candidates=evaluated_candidates,
@@ -143,7 +177,7 @@ def rank_and_route_candidates(
                 "selected_expected_value": decision.max_expected_value,
                 "is_exploration": int(is_exploration),
                 "is_fallback": 0,
-                "num_candidates": num_candidates,
+                "num_candidates": len(evaluated_candidates),
             }
         )
 

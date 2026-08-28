@@ -51,6 +51,9 @@ def mock_session_data(spark_session):
             StructField("mobile_optimized", IntegerType(), True),
             StructField("commission_rate", DoubleType(), True),
             StructField("p_conversion_ground_truth", DoubleType(), True),
+            StructField(
+                "is_conversion", IntegerType(), True
+            ),  # <--- Added target column
             StructField("subscriber_tier", StringType(), True),
         ]
     )
@@ -68,6 +71,7 @@ def mock_session_data(spark_session):
             0,
             0.15,
             0.8,
+            1,  # is_conversion
             "gold",
         ),
         (
@@ -82,6 +86,7 @@ def mock_session_data(spark_session):
             1,
             0.10,
             0.4,
+            0,  # is_conversion
             "silver",
         ),
     ]
@@ -106,5 +111,5 @@ def test_feature_engineering_pipeline(mock_session_data):
     first_row = output_df.first()
     assert first_row["user_browserName_clean"] == "chrome"
     assert first_row["cross_sell_score"] == 1.0
-    assert first_row["expected_gross_commission"] == pytest.approx(18.0)
     assert first_row["mobile_ux_friction"] == 1
+    assert first_row["is_conversion"] == 1
