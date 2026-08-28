@@ -34,7 +34,7 @@ To evaluate routing efficiency under real-world marketplace dynamics (cold-start
 | **Payout Aware?** | ❌ No (treats $10 and $1,000 equal) | ✅ Yes | ✅ Yes |
 | **Cold Start** | ❌ Fails (new offers stay low) | ❌ Lock-in (winner-takes-all loop) | ✅ Handled via forced traffic allocation |
 | **Data Bias** | High selection bias | Severe feedback loop | Unbiased (logs propensity scores) |
-| **Regret Profile** | High revenue regret | Zero short-term, high long-term | Low bounded regret ($\epsilon$ tax) |
+| **Regret Profile** | High linear regret $O(T)$ | Linear regret $O(T)$ (trapped in local optima) | Linear regret $O(\epsilon T)$ (Decaying $\epsilon_t$ or UCB required for sub-linear $O(\log T)$) |
 
 ### High Level Flow
 ```mermaid

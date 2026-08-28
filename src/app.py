@@ -113,9 +113,7 @@ def build_candidate_feature_matrix(
         user.user_lat, user.user_lng, user.dest_lat, user.dest_lng
     )
     is_long_haul = 1 if dist_km >= 1000.0 else 0
-    cross_sell_score = float(
-        sum([user.booked_flight, user.booked_hotel, user.booked_rental])
-    )
+    cross_sell_score = float(sum([user.booked_flight, user.booked_rental]))
 
     # Standardize browser name
     browser_clean = user.user_browserName.strip().lower()
