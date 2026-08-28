@@ -9,6 +9,21 @@ from src.utils import get_logger
 
 logger = get_logger()
 
+# Feature Schema Contract (Single Source of Truth)
+CAT_COLS = ["user_device", "user_osName", "user_browserName_clean", "subscriber_tier"]
+
+NUMERIC_COLS = [
+    "travel_distance_km",
+    "is_long_haul",
+    "adr_clean",
+    "cross_sell_score",
+    "mobile_ux_friction",
+    "expected_gross_commission",
+]
+
+FEATURE_COLS = CAT_COLS + NUMERIC_COLS
+TARGET_COL = "is_conversion"
+
 
 def parse_coordinate(col_name: str, index: int):
     """
