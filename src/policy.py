@@ -1,4 +1,3 @@
-# src/policy.py
 import random
 from dataclasses import dataclass, field
 
