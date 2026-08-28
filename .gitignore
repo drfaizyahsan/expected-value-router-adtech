@@ -1,0 +1,16 @@
+.gitignore
+.idea
+.pdm-python
+.python-version
+.ruff_cache
+src/__pycache__/*
+tests/__pycache__/*
+mlruns/
+*.db
+models/*.pkl
+*.parquet
+
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+logs/
