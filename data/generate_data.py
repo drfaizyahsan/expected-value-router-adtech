@@ -37,7 +37,7 @@ def parse_coords_safely(coord_str: str) -> tuple[float, float]:
         parts = str(coord_str).split(",")
         if len(parts) == 2:
             return float(parts[0]), float(parts[1])
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         pass
     return np.nan, np.nan
 
